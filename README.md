@@ -57,23 +57,60 @@ export GITHUB_TOKEN=your_github_token
 GET /health
 ```
 
-### Orders
+### Orders Management
+
+#### **Create Market Order with Stop Loss & Take Profit**
 ```bash
-# Create order
 POST /orders
 {
   "symbol": "BTCUSD.TTF",
   "order_type": "market",
   "side": "buy",
   "quantity": 0.01,
-  "stop_loss": 45000,
-  "take_profit": 55000
+  "stop_loss": 114210,
+  "stop_loss_type": "absolute",
+  "take_profit": 115200,
+  "take_profit_type": "absolute"
 }
+```
 
-# Get all orders
+#### **Create Limit Order with Stop Loss & Take Profit**
+```bash
+POST /orders
+{
+  "symbol": "BTCUSD.TTF",
+  "order_type": "limit",
+  "side": "buy",
+  "quantity": 0.01,
+  "price": 114000,
+  "stop_loss": 113500,
+  "stop_loss_type": "absolute",
+  "take_profit": 115000,
+  "take_profit_type": "absolute",
+  "validity": "GTC"
+}
+```
+
+#### **Create Market Order with Trailing Stop Loss**
+```bash
+POST /orders
+{
+  "symbol": "BTCUSD.TTF",
+  "order_type": "market",
+  "side": "buy",
+  "quantity": 0.01,
+  "stop_loss": 1000,
+  "stop_loss_type": "trailingOffset"
+}
+```
+
+#### **Get All Orders**
+```bash
 GET /orders
+```
 
-# Cancel order
+#### **Cancel Order**
+```bash
 DELETE /orders/{order_id}
 ```
 
@@ -112,7 +149,7 @@ GET /accounts/details
 # Get all instruments
 GET /instruments
 
-# Get current price
+# Get current price for a symbol
 GET /instruments/{symbol}/price
 ```
 
@@ -121,44 +158,200 @@ GET /instruments/{symbol}/price
 # Get all positions
 GET /positions
 
-# Close position
+# Close a position
 DELETE /positions/{position_id}
 ```
 
-## 🐳 **Local Development**
+## 📈 **Order Management Guide**
 
-### Prerequisites
-- Docker and Docker Compose
-- TradeLocker credentials
-- AWS CLI configured
+### **Supported Order Types**
 
-### Setup
-1. **Create `.env` file:**
+#### **1. Market Orders**
+- **Purpose**: Execute immediately at current market price
+- **Use Case**: Quick entry/exit, high liquidity situations
+- **Example**:
 ```bash
-TRADELOCKER_USERNAME=your_username
-TRADELOCKER_PASSWORD=your_password
-TRADELOCKER_SERVER=your_server
-```
-
-2. **Run locally:**
-```bash
-./run_local.sh
-```
-
-3. **Test the API:**
-```bash
-# Health check
-curl http://localhost:8000/health
-
-# Get accounts
-curl http://localhost:8000/accounts
-
-# Get detailed account information
-curl http://localhost:8000/accounts/details
-
-# Create order
 curl -X POST http://localhost:8000/orders \
-  -H 'Content-Type: application/json' \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "symbol": "BTCUSD.TTF",
+    "order_type": "market",
+    "side": "buy",
+    "quantity": 0.01,
+    "stop_loss": 114210,
+    "stop_loss_type": "absolute",
+    "take_profit": 115200,
+    "take_profit_type": "absolute"
+  }'
+```
+
+#### **2. Limit Orders**
+- **Purpose**: Execute at specified price or better
+- **Use Case**: Entry at specific levels, avoiding slippage
+- **Example**:
+```bash
+curl -X POST http://localhost:8000/orders \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "symbol": "BTCUSD.TTF",
+    "order_type": "limit",
+    "side": "buy",
+    "quantity": 0.01,
+    "price": 114000,
+    "stop_loss": 113500,
+    "stop_loss_type": "absolute",
+    "take_profit": 115000,
+    "take_profit_type": "absolute",
+    "validity": "GTC"
+  }'
+```
+
+#### **3. Stop Orders**
+- **Purpose**: Execute when price reaches stop level
+- **Use Case**: Breakout entries, stop losses
+- **Example**:
+```bash
+curl -X POST http://localhost:8000/orders \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "symbol": "BTCUSD.TTF",
+    "order_type": "stop",
+    "side": "buy",
+    "quantity": 0.01,
+    "stop_price": 115000,
+    "stop_loss": 114500,
+    "stop_loss_type": "absolute",
+    "take_profit": 116000,
+    "take_profit_type": "absolute",
+    "validity": "GTC"
+  }'
+```
+
+#### **4. Stop-Limit Orders**
+- **Purpose**: Stop order that becomes a limit order when triggered
+- **Use Case**: Controlled breakout entries
+- **Example**:
+```bash
+curl -X POST http://localhost:8000/orders \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "symbol": "BTCUSD.TTF",
+    "order_type": "stop_limit",
+    "side": "buy",
+    "quantity": 0.01,
+    "stop_price": 115000,
+    "price": 115100,
+    "stop_loss": 114500,
+    "stop_loss_type": "absolute",
+    "take_profit": 116000,
+    "take_profit_type": "absolute",
+    "validity": "GTC"
+  }'
+```
+
+### **Stop Loss Types**
+
+#### **1. Absolute Stop Loss**
+- **Type**: `"absolute"`
+- **Description**: Fixed price level
+- **Example**: `"stop_loss": 114210, "stop_loss_type": "absolute"`
+
+#### **2. Offset Stop Loss**
+- **Type**: `"offset"`
+- **Description**: Relative to entry price
+- **Example**: `"stop_loss": 500, "stop_loss_type": "offset"`
+
+#### **3. Trailing Stop Loss**
+- **Type**: `"trailingOffset"`
+- **Description**: Moves with price in favorable direction
+- **Example**: `"stop_loss": 1000, "stop_loss_type": "trailingOffset"`
+
+### **Take Profit Types**
+
+#### **1. Absolute Take Profit**
+- **Type**: `"absolute"`
+- **Description**: Fixed price level
+- **Example**: `"take_profit": 115200, "take_profit_type": "absolute"`
+
+#### **2. Offset Take Profit**
+- **Type**: `"offset"`
+- **Description**: Relative to entry price
+- **Example**: `"take_profit": 1000, "take_profit_type": "offset"`
+
+### **Order Validity**
+
+- **GTC** (Good Till Cancelled): Order remains active until cancelled
+- **IOC** (Immediate Or Cancel): Execute immediately or cancel
+- **FOK** (Fill Or Kill): Execute completely or cancel
+
+### **Supported Instruments**
+
+#### **Cryptocurrencies**
+- `BTCUSD.TTF` - Bitcoin (recommended)
+- `XAUUSD.TTF` - Gold
+
+#### **Forex Pairs**
+- `AUDCAD` - Australian Dollar / Canadian Dollar
+- `EURUSD` - Euro / US Dollar
+- `GBPUSD` - British Pound / US Dollar
+- And many more...
+
+### **Risk Management**
+
+#### **Position Sizing**
+- **Small**: 0.01 lots (recommended for testing)
+- **Medium**: 0.1 lots
+- **Large**: 1.0+ lots (use with caution)
+
+#### **Stop Loss Guidelines**
+- **BTCUSD.TTF**: 500-2000 points
+- **Forex**: 50-200 pips
+- **Gold**: 100-500 points
+
+#### **Risk-Reward Ratios**
+- **Conservative**: 1:1.5
+- **Moderate**: 1:2
+- **Aggressive**: 1:3+
+
+### **API Authentication**
+
+All sensitive endpoints require API key authentication:
+
+```bash
+# Include API key in headers
+curl -H "X-API-Key: your-secret-api-key-here" \
+  http://localhost:8000/orders
+```
+
+### **Error Handling**
+
+Common error responses:
+
+```json
+{
+  "success": false,
+  "error": "No TRADE route found for instrument_id=np.int64(892)",
+  "timestamp": "2025-08-05T05:13:23.551674+00:00"
+}
+```
+
+**Common Issues:**
+1. **Invalid instrument**: Check symbol name
+2. **No TRADE route**: Instrument not available for API trading
+3. **Invalid price**: Price outside acceptable range
+4. **Insufficient margin**: Not enough account balance
+
+### **Testing Your Orders**
+
+#### **1. Test Market Order**
+```bash
+curl -X POST http://localhost:8000/orders \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
   -d '{
     "symbol": "BTCUSD.TTF",
     "order_type": "market",
@@ -167,113 +360,37 @@ curl -X POST http://localhost:8000/orders \
   }'
 ```
 
-### Local Development Commands
+#### **2. Test Limit Order**
 ```bash
-# View logs
-docker-compose logs -f
-
-# Stop the API
-docker-compose down
-
-# Rebuild and restart
-docker-compose up --build -d
+curl -X POST http://localhost:8000/orders \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "symbol": "BTCUSD.TTF",
+    "order_type": "limit",
+    "side": "buy",
+    "quantity": 0.01,
+    "price": 114000,
+    "validity": "GTC"
+  }'
 ```
 
-## ☁️ **AWS App Runner Deployment**
-
-### Prerequisites
-- AWS CLI configured with `landingzone` profile
-- GitHub repository with the code
-- GitHub personal access token
-
-### Deployment Steps
-
-1. **Set up environment variables:**
+#### **3. Test with Stop Loss & Take Profit**
 ```bash
-export GITHUB_REPO=https://github.com/yourusername/tradelocker-api
-export GITHUB_TOKEN=your_github_token
+curl -X POST http://localhost:8000/orders \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "symbol": "BTCUSD.TTF",
+    "order_type": "market",
+    "side": "buy",
+    "quantity": 0.01,
+    "stop_loss": 114210,
+    "stop_loss_type": "absolute",
+    "take_profit": 115200,
+    "take_profit_type": "absolute"
+  }'
 ```
-
-2. **Deploy to App Runner:**
-```bash
-./deploy_apprunner.sh
-```
-
-3. **Test the deployed API:**
-```bash
-# Get the service URL
-SERVICE_URL=$(aws apprunner describe-service \
-  --service-name tradelocker-api \
-  --region eu-west-1 \
-  --profile landingzone \
-  --query 'Service.ServiceUrl' \
-  --output text)
-
-# Test health endpoint
-curl https://$SERVICE_URL/health
-```
-
-### App Runner Management
-```bash
-# View service status
-aws apprunner describe-service \
-  --service-name tradelocker-api \
-  --region eu-west-1 \
-  --profile landingzone
-
-# View logs
-aws logs tail /aws/apprunner/tradelocker-api \
-  --region eu-west-1 \
-  --profile landingzone
-
-# Delete service
-aws apprunner delete-service \
-  --service-name tradelocker-api \
-  --region eu-west-1 \
-  --profile landingzone
-```
-
-## 🔧 **Configuration**
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TRADELOCKER_USERNAME` | TradeLocker username | - |
-| `TRADELOCKER_PASSWORD` | TradeLocker password | - |
-| `TRADELOCKER_SERVER` | TradeLocker server | - |
-| `TRADELOCKER_ENVIRONMENT` | TradeLocker environment | `https://demo.tradelocker.com` |
-| `TRADELOCKER_SECRET_NAME` | AWS Secrets Manager secret name | `tradelocker/credentials` |
-| `ORDERS_TABLE_NAME` | DynamoDB table for order logging | `tradelocker-orders` |
-
-### AWS Resources Required
-
-1. **Secrets Manager Secret:**
-```json
-{
-  "environment": "https://demo.tradelocker.com",
-  "username": "your_username",
-  "password": "your_password",
-  "server": "your_server"
-}
-```
-
-2. **DynamoDB Table:**
-```bash
-aws dynamodb create-table \
-  --table-name tradelocker-orders \
-  --attribute-definitions AttributeName=order_id,AttributeType=S \
-  --key-schema AttributeName=order_id,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --region eu-west-1 \
-  --profile landingzone
-```
-
-## 📊 **API Documentation**
-
-Once the API is running, visit:
-- **Swagger UI:** `http://localhost:8000/docs` (local) or `https://your-app-runner-url/docs`
-- **ReDoc:** `http://localhost:8000/redoc` (local) or `https://your-app-runner-url/redoc`
 
 ## 📈 **Account Monitoring Features**
 
@@ -301,134 +418,132 @@ The API provides comprehensive account monitoring capabilities:
 
 Perfect for automated trading strategies and risk management!
 
-## 🧪 **Testing**
+## 🔐 **API Security**
 
-### Example API Calls
+### **API Key Authentication**
+All sensitive endpoints require API key authentication:
 
 ```bash
-# Health check
-curl https://your-app-runner-url/health
+# Required for:
+# - POST /orders (create orders)
+# - DELETE /orders/{order_id} (cancel orders)
+# - GET /accounts/details (account details)
+# - DELETE /positions/{position_id} (close positions)
 
-# Get accounts
-curl https://your-app-runner-url/accounts
+curl -H "X-API-Key: your-secret-api-key-here" \
+  http://localhost:8000/orders
+```
 
-# Get detailed account information
-curl https://your-app-runner-url/accounts/details
+### **Public Endpoints**
+These endpoints don't require authentication:
+- `GET /health` - Health check
+- `GET /accounts` - Basic account info
+- `GET /instruments` - Available instruments
+- `GET /instruments/{symbol}/price` - Current prices
+- `GET /positions` - Open positions
+- `GET /orders` - Order history
 
-# Get instruments
-curl https://your-app-runner-url/instruments
+## 🚀 **Deployment**
 
-# Get current price
-curl https://your-app-runner-url/instruments/BTCUSD.TTF/price
+### **Local Development**
+```bash
+# Build and run locally
+docker-compose up --build
 
-# Create market order
-curl -X POST https://your-app-runner-url/orders \
-  -H 'Content-Type: application/json' \
+# Test the API
+curl http://localhost:8000/health
+```
+
+### **AWS App Runner Deployment**
+```bash
+# Deploy to AWS App Runner
+./deploy_terraform.sh
+
+# Get the service URL
+terraform output app_runner_service_url
+```
+
+## 🔧 **Troubleshooting**
+
+### **Common Issues**
+
+1. **"No TRADE route found"**
+   - Check if instrument is available for API trading
+   - Try different instruments (BTCUSD.TTF, AUDCAD, etc.)
+
+2. **"Invalid API key"**
+   - Verify API key in headers
+   - Check environment variables
+
+3. **"Instrument not found"**
+   - Verify symbol name (case sensitive)
+   - Check available instruments list
+
+4. **"TP price for the order is not valid"**
+   - Adjust take profit price to realistic levels
+   - Check current market price
+
+### **Debug Mode**
+Enable detailed logging:
+```bash
+# Check container logs
+docker-compose logs -f
+
+# Check specific endpoint
+curl -v http://localhost:8000/health
+```
+
+## 📚 **Examples**
+
+### **Complete Trading Workflow**
+
+1. **Check Account Status**
+```bash
+curl -H "X-API-Key: your-api-key" \
+  http://localhost:8000/accounts/details
+```
+
+2. **Get Current Price**
+```bash
+curl http://localhost:8000/instruments/BTCUSD.TTF/price
+```
+
+3. **Place Market Order with SL/TP**
+```bash
+curl -X POST http://localhost:8000/orders \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
   -d '{
     "symbol": "BTCUSD.TTF",
     "order_type": "market",
     "side": "buy",
-    "quantity": 0.01
-  }'
-
-# Create limit order with SL/TP
-curl -X POST https://your-app-runner-url/orders \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "symbol": "BTCUSD.TTF",
-    "order_type": "limit",
-    "side": "buy",
     "quantity": 0.01,
-    "price": 50000,
-    "stop_loss": 45000,
-    "take_profit": 55000
+    "stop_loss": 114210,
+    "stop_loss_type": "absolute",
+    "take_profit": 115200,
+    "take_profit_type": "absolute"
   }'
 ```
 
-## 🔍 **Monitoring & Logging**
-
-### Local Logs
+4. **Monitor Positions**
 ```bash
-# View container logs
-docker-compose logs -f
-
-# View specific service logs
-docker-compose logs tradelocker-api
+curl -H "X-API-Key: your-api-key" \
+  http://localhost:8000/positions
 ```
 
-### AWS CloudWatch Logs
+5. **Close Position (if needed)**
 ```bash
-# View App Runner logs
-aws logs tail /aws/apprunner/tradelocker-api \
-  --region eu-west-1 \
-  --profile landingzone \
-  --follow
+curl -X DELETE -H "X-API-Key: your-api-key" \
+  http://localhost:8000/positions/{position_id}
 ```
 
-## 🛠️ **Troubleshooting**
+## 🎯 **Best Practices**
 
-### Common Issues
+1. **Always use stop loss and take profit**
+2. **Test with small quantities first**
+3. **Monitor positions regularly**
+4. **Use appropriate risk-reward ratios**
+5. **Keep API keys secure**
+6. **Test thoroughly before live trading**
 
-1. **Container won't start:**
-   - Check your `.env` file has correct credentials
-   - Ensure AWS credentials are configured
-   - Check Docker logs: `docker-compose logs`
-
-2. **API returns 503 errors:**
-   - Verify TradeLocker credentials
-   - Check network connectivity
-   - Review application logs
-
-3. **App Runner deployment fails:**
-   - Ensure GitHub repository is public or token has access
-   - Check IAM roles and permissions
-   - Verify region and profile configuration
-
-### Debug Commands
-
-```bash
-# Test TradeLocker connection locally
-python -c "
-from tradelocker import TLAPI
-tl = TLAPI(
-    environment='https://demo.tradelocker.com',
-    username='your_username',
-    password='your_password',
-    server='your_server'
-)
-print('Connection successful')
-"
-
-# Check AWS credentials
-aws sts get-caller-identity --profile landingzone
-
-# Test Secrets Manager access
-aws secretsmanager get-secret-value \
-  --secret-id tradelocker/credentials \
-  --region eu-west-1 \
-  --profile landingzone
-```
-
-## 📈 **Benefits of App Runner vs Lambda**
-
-| Feature | Lambda | App Runner |
-|---------|--------|------------|
-| **Cold Starts** | Yes | No |
-| **Dependencies** | Complex layers | Simple requirements.txt |
-| **Debugging** | Limited | Full container logs |
-| **Local Testing** | Difficult | Easy with Docker |
-| **Auto-scaling** | Yes | Yes |
-| **HTTPS** | Via API Gateway | Built-in |
-| **Deployment** | Complex | Simple GitHub integration |
-
-## 🚀 **Next Steps**
-
-1. **Set up GitHub repository** with your code
-2. **Configure AWS credentials** in Secrets Manager
-3. **Test locally** with Docker
-4. **Deploy to App Runner** for production
-5. **Integrate with n8n** for automation
-
-## 📝 **License**
-
-This project is licensed under the MIT License. 
+Perfect for automated trading strategies and risk management! 
