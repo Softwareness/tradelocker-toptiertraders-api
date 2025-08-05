@@ -1,20 +1,20 @@
-# 🚀 TradeLocker API - Containerized REST API
+# 🚀 TradeLocker API - FastAPI Trading Service
 
-A modern, containerized REST API for automated trading with TradeLocker, built with FastAPI and deployable to AWS App Runner.
+A modern, containerized REST API for automated trading with TradeLocker, built with FastAPI.
 
 ## 🏗️ **Architecture**
 
-This solution uses **AWS App Runner** instead of Lambda for better reliability and easier debugging:
+This solution provides a **FastAPI** application that can be deployed to any container platform:
 
 - **FastAPI** - Modern, fast web framework
 - **Docker** - Containerized deployment
-- **AWS App Runner** - Managed container service
-- **AWS Secrets Manager** - Secure credential storage
-- **AWS DynamoDB** - Order logging and state management
+- **TradeLocker Python SDK** - Official trading library
+- **Pydantic** - Data validation and serialization
+- **Uvicorn** - ASGI server
 
 ## 🚀 **Quick Start**
 
-### 1. **Local Development**
+### **Local Development**
 
 ```bash
 # Clone the repository
@@ -27,27 +27,6 @@ cp .env.example .env
 
 # Run locally with Docker
 ./run_local.sh
-```
-
-### 2. **AWS App Runner Deployment**
-
-#### **Public Repository:**
-```bash
-# Set up GitHub repository
-export GITHUB_REPO=https://github.com/Softwareness/tradelocker-api
-
-# Deploy to AWS App Runner
-./deploy_terraform.sh
-```
-
-#### **Private Repository:**
-```bash
-# Set up GitHub repository and token
-export GITHUB_REPO=https://github.com/Softwareness/tradelocker-api
-export GITHUB_TOKEN=your_github_token
-
-# Deploy to AWS App Runner with private repository
-./deploy_private_repo.sh
 ```
 
 ## 📋 **API Endpoints**
@@ -443,24 +422,59 @@ These endpoints don't require authentication:
 - `GET /positions` - Open positions
 - `GET /orders` - Order history
 
-## 🚀 **Deployment**
+## 🐳 **Local Development**
 
-### **Local Development**
+### **Prerequisites**
+- Docker and Docker Compose
+- TradeLocker credentials
+
+### **Setup**
+1. **Create `.env` file:**
 ```bash
-# Build and run locally
-docker-compose up --build
-
-# Test the API
-curl http://localhost:8000/health
+TRADELOCKER_USERNAME=your_username
+TRADELOCKER_PASSWORD=your_password
+TRADELOCKER_SERVER=your_server
+API_KEY=your-secret-api-key-here
 ```
 
-### **AWS App Runner Deployment**
+2. **Run locally:**
 ```bash
-# Deploy to AWS App Runner
-./deploy_terraform.sh
+./run_local.sh
+```
 
-# Get the service URL
-terraform output app_runner_service_url
+3. **Test the API:**
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Get accounts
+curl http://localhost:8000/accounts
+
+# Get detailed account information
+curl http://localhost:8000/accounts/details
+
+# Create order
+curl -X POST http://localhost:8000/orders \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your-secret-api-key-here' \
+  -d '{
+    "symbol": "BTCUSD.TTF",
+    "order_type": "market",
+    "side": "buy",
+    "quantity": 0.01
+  }'
+```
+
+### **Local Development Commands**
+```bash
+# View logs
+docker-compose logs -f
+
+# Stop the API
+docker-compose down
+
+# Rebuild and restart
+docker-compose up --build -d
 ```
 
 ## 🔧 **Troubleshooting**
@@ -545,5 +559,15 @@ curl -X DELETE -H "X-API-Key: your-api-key" \
 4. **Use appropriate risk-reward ratios**
 5. **Keep API keys secure**
 6. **Test thoroughly before live trading**
+
+## 📖 **Documentation**
+
+Once the API is running, visit:
+- **Swagger UI:** `http://localhost:8000/docs` (local)
+- **ReDoc:** `http://localhost:8000/redoc` (local)
+
+## 🔗 **Integration**
+
+For n8n integration examples, see: `n8n_integration_examples.md`
 
 Perfect for automated trading strategies and risk management! 
