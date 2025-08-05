@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  tradelocker-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - BROKER_TYPE=${BROKER_TYPE:-tradelocker}
+      - TRADELOCKER_ENVIRONMENT=https://demo.tradelocker.com
+      - TRADELOCKER_USERNAME=${TRADELOCKER_USERNAME}
+      - TRADELOCKER_PASSWORD=${TRADELOCKER_PASSWORD}
+      - TRADELOCKER_SERVER=${TRADELOCKER_SERVER}
+      - AWS_DEFAULT_REGION=eu-west-1
+      - AWS_PROFILE=landingzone
+      - API_KEY=${API_KEY:-your-secret-api-key-here}
+    volumes:
+      - ~/.aws:/home/app/.aws:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s 
