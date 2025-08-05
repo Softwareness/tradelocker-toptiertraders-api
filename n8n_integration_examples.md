@@ -27,18 +27,18 @@ https://your-app-runner-service-url.region.awsapprunner.com
   "url": "https://your-app-runner-url/orders",
   "method": "POST",
   "headers": {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "X-API-Key": "your-secret-api-key-here"
   },
   "body": {
     "symbol": "BTCUSD.TTF",
-    "order_type": "limit",
+    "order_type": "market",
     "side": "buy",
     "quantity": 0.01,
-    "price": 113500.0,
-    "stop_loss": 113200.0,
-    "take_profit": 113800.0,
-    "validity": "GTC",
-    "description": "BTC long position from n8n"
+    "stop_loss": 114210,
+    "stop_loss_type": "absolute",
+    "take_profit": 115200,
+    "take_profit_type": "absolute"
   }
 }
 ```
@@ -83,7 +83,7 @@ Trigger → Get Price → Decision → Place Order → Notification
 const priceData = $input.all()[0].json;
 
 if (priceData.success) {
-  const currentPrice = priceData.ask_price;
+  const currentPrice = priceData.ask_price || 114000; // Fallback if price not available
   const targetPrice = 113500.0;
   
   // Place order if price is below target
@@ -103,7 +103,8 @@ if (priceData.success) {
   "url": "https://your-app-runner-url/orders",
   "method": "POST",
   "headers": {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "X-API-Key": "your-secret-api-key-here"
   },
   "body": {
     "symbol": "BTCUSD.TTF",
@@ -112,8 +113,10 @@ if (priceData.success) {
     "quantity": 0.01,
     "price": "={{ $('Decision').item.json.currentPrice }}",
     "stop_loss": "={{ $('Decision').item.json.currentPrice * 0.99 }}",
+    "stop_loss_type": "absolute",
     "take_profit": "={{ $('Decision').item.json.currentPrice * 1.02 }}",
-    "description": "Automated trade from n8n"
+    "take_profit_type": "absolute",
+    "validity": "GTC"
   }
 }
 ```
@@ -150,31 +153,91 @@ if (positions.success) {
 }
 ```
 
-### 4. Risk Management Workflow
+### 4. Account Monitoring
+
+#### Get Account Details
+```json
+{
+  "url": "https://your-app-runner-url/accounts/details",
+  "method": "GET",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-API-Key": "your-secret-api-key-here"
+  }
+}
+```
+
+#### Account Analysis (Code Node)
+```javascript
+const accountData = $input.all()[0].json;
+
+if (accountData.success) {
+  const balance = accountData.balance;
+  const equity = accountData.equity;
+  const marginUsed = accountData.margin_used;
+  const marginAvailable = accountData.margin_available;
+  const marginLevel = accountData.margin_level;
+  const positionsCount = accountData.positions_count;
+  const unrealizedPnl = accountData.unrealized_pnl;
+  
+  return {
+    balance,
+    equity,
+    marginUsed,
+    marginAvailable,
+    marginLevel,
+    positionsCount,
+    unrealizedPnl,
+    currency: accountData.currency,
+    accountId: accountData.account_id,
+    status: accountData.account_status,
+    lowBalance: balance < 1000,
+    lowMargin: marginLevel < 100,
+    alert: balance < 1000 ? `Low balance: ${balance} ${accountData.currency}` : 
+           marginLevel < 100 ? `Low margin level: ${marginLevel}%` : null
+  };
+} else {
+  throw new Error(`Failed to get account data: ${accountData.error}`);
+}
+```
+
+### 5. Risk Management Workflow
 
 #### Workflow Structure
 ```
-Cron Trigger → Get Positions → Calculate Risk → Decision → Close Positions
+Cron Trigger → Get Account Details → Calculate Risk → Decision → Close Positions
 ```
 
 #### Risk Calculation (Code Node)
 ```javascript
-const portfolioData = $input.all()[0].json;
+const accountData = $input.all()[0].json;
 const maxRisk = 1000; // $1000 max loss
 
-const totalPnL = portfolioData.totalPnL;
-
-if (totalPnL < -maxRisk) {
-  return {
-    shouldCloseAll: true,
-    reason: `Portfolio loss (${totalPnL}) exceeds maximum risk (${maxRisk})`,
-    totalPnL
-  };
+if (accountData.success) {
+  const unrealizedPnl = accountData.unrealizedPnl;
+  const marginLevel = accountData.marginLevel;
+  
+  if (unrealizedPnl < -maxRisk) {
+    return {
+      shouldCloseAll: true,
+      reason: `Portfolio loss (${unrealizedPnl}) exceeds maximum risk (${maxRisk})`,
+      unrealizedPnl
+    };
+  } else if (marginLevel < 100) {
+    return {
+      shouldCloseAll: true,
+      reason: `Low margin level (${marginLevel}%)`,
+      marginLevel
+    };
+  } else {
+    return {
+      shouldCloseAll: false,
+      unrealizedPnl,
+      marginLevel
+    };
+  }
 } else {
-  return {
-    shouldCloseAll: false,
-    totalPnL
-  };
+  throw new Error(`Failed to get account data: ${accountData.error}`);
 }
 ```
 
@@ -182,46 +245,39 @@ if (totalPnL < -maxRisk) {
 ```json
 {
   "url": "https://your-app-runner-url/positions",
-  "method": "DELETE",
-  "headers": {
-    "Content-Type": "application/json"
-  }
-}
-```
-
-### 5. Market Data Monitoring
-
-#### Get Account Status
-```json
-{
-  "url": "https://your-app-runner-url/accounts",
   "method": "GET",
   "headers": {
     "Content-Type": "application/json"
   }
 }
 ```
-```
 
-#### Account Monitoring (Code Node)
+#### Close Position (Code Node)
 ```javascript
-const accountData = $input.all()[0].json;
+const positions = $input.all()[0].json;
 
-if (accountData.success) {
-  const account = accountData.accounts[0];
-  const balance = account.accountBalance;
-  const minBalance = 1000; // Minimum balance alert
+if (positions.success && positions.positions.length > 0) {
+  // Close each position
+  const closePromises = positions.positions.map(position => {
+    return {
+      url: `https://your-app-runner-url/positions/${position.id}`,
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": "your-secret-api-key-here"
+      }
+    };
+  });
   
   return {
-    balance,
-    currency: account.currency,
-    accountId: account.id,
-    status: account.status,
-    lowBalance: balance < minBalance,
-    alert: balance < minBalance ? `Low balance: ${balance} ${account.currency}` : null
+    positionsToClose: closePromises,
+    count: positions.positions.length
   };
 } else {
-  throw new Error(`Failed to get account data: ${accountData.error}`);
+  return {
+    positionsToClose: [],
+    count: 0
+  };
 }
 ```
 
@@ -237,7 +293,7 @@ Cron Trigger → Get Price → Technical Analysis → Decision → Place Order
 const priceData = $input.all()[0].json;
 
 if (priceData.success) {
-  const currentPrice = priceData.ask_price;
+  const currentPrice = priceData.ask_price || 114000; // Fallback if price not available
   
   // Simple moving average strategy (example)
   // In real implementation, you'd calculate actual moving averages
@@ -261,11 +317,11 @@ if (priceData.success) {
 #### Place Order Based on Signal
 ```json
 {
-  "url": "https://your-api-url/orders",
+  "url": "https://your-app-runner-url/orders",
   "method": "POST",
   "headers": {
-    "x-api-key": "your-api-key",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "X-API-Key": "your-secret-api-key-here"
   },
   "body": {
     "symbol": "BTCUSD.TTF",
@@ -273,13 +329,36 @@ if (priceData.success) {
     "side": "={{ $('Technical Analysis').item.json.signal }}",
     "quantity": 0.01,
     "stop_loss": "={{ $('Technical Analysis').item.json.currentPrice * 0.98 }}",
+    "stop_loss_type": "absolute",
     "take_profit": "={{ $('Technical Analysis').item.json.currentPrice * 1.03 }}",
-    "description": "Automated strategy trade"
+    "take_profit_type": "absolute"
   }
 }
 ```
 
-### 7. Error Handling and Notifications
+### 7. Trailing Stop Loss Strategy
+
+#### Create Trailing Stop Order
+```json
+{
+  "url": "https://your-app-runner-url/orders",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-API-Key": "your-secret-api-key-here"
+  },
+  "body": {
+    "symbol": "BTCUSD.TTF",
+    "order_type": "market",
+    "side": "buy",
+    "quantity": 0.01,
+    "stop_loss": 1000,
+    "stop_loss_type": "trailingOffset"
+  }
+}
+```
+
+### 8. Error Handling and Notifications
 
 #### Error Handling (Code Node)
 ```javascript
@@ -342,7 +421,7 @@ if (previousNode.json && !previousNode.json.success) {
         },
         {
           "title": "Symbol",
-          "value": "{{ $('Place Order').item.json.symbol }}",
+          "value": "BTCUSD.TTF",
           "short": true
         },
         {
@@ -352,7 +431,7 @@ if (previousNode.json && !previousNode.json.success) {
         },
         {
           "title": "Quantity",
-          "value": "{{ $('Place Order').item.json.quantity }}",
+          "value": "0.01",
           "short": true
         }
       ]
@@ -367,7 +446,7 @@ if (previousNode.json && !previousNode.json.success) {
 Set these in n8n settings:
 ```
 TRADELOCKER_API_URL=https://your-api-url
-TRADELOCKER_API_KEY=your-api-key
+TRADELOCKER_API_KEY=your-secret-api-key-here
 TRADELOCKER_SYMBOL=BTCUSD.TTF
 TRADELOCKER_QUANTITY=0.01
 ```
@@ -406,4 +485,35 @@ Connect n8n workflows to:
 - Telegram bots
 - Email notifications
 
-This comprehensive integration allows you to build sophisticated automated trading systems using n8n's visual workflow builder while leveraging the power of your serverless TradeLocker API. 
+## 🎯 **API Endpoints Summary**
+
+### **Public Endpoints** (No API Key Required)
+- `GET /health` - Health check
+- `GET /accounts` - Basic account info
+- `GET /instruments` - Available instruments
+- `GET /instruments/{symbol}/price` - Current prices
+- `GET /positions` - Open positions
+- `GET /orders` - Order history
+
+### **Protected Endpoints** (API Key Required)
+- `POST /orders` - Create orders
+- `DELETE /orders/{order_id}` - Cancel orders
+- `GET /accounts/details` - Detailed account info
+- `DELETE /positions/{position_id}` - Close positions
+
+### **Supported Order Types**
+- **Market**: Immediate execution
+- **Limit**: Execute at specified price
+- **Stop**: Execute when price reaches stop level
+- **Stop-Limit**: Stop order that becomes limit order
+
+### **Stop Loss Types**
+- **absolute**: Fixed price level
+- **offset**: Relative to entry price
+- **trailingOffset**: Moves with price
+
+### **Take Profit Types**
+- **absolute**: Fixed price level
+- **offset**: Relative to entry price
+
+This comprehensive integration allows you to build sophisticated automated trading systems using n8n's visual workflow builder while leveraging the power of your containerized TradeLocker API. 
