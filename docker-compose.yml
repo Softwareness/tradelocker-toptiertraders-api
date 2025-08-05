@@ -5,6 +5,8 @@ services:
     build: .
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - BROKER_TYPE=${BROKER_TYPE:-tradelocker}
       - TRADELOCKER_ENVIRONMENT=https://demo.tradelocker.com

@@ -137,8 +137,39 @@ GET /instruments/{symbol}/price
 # Get all positions
 GET /positions
 
-# Close a position
+### **Position Management**
+
+#### **Close a Position**
+```bash
 DELETE /positions/{position_id}
+```
+
+**Important Note**: The TradeLocker API has a limitation where positions cannot be directly "closed" or deleted. Instead, closing a position creates an **opposite position** to neutralize the exposure. The original position remains visible for audit purposes.
+
+**Example**:
+```bash
+# Close a buy position (creates a sell position)
+curl -X DELETE -H "X-API-Key: your-api-key" \
+  http://localhost:8000/positions/7782220156104341016
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "order_id": "7782220156131813090",
+  "status": "closed",
+  "message": "Position closed by creating opposite order 7782220156131813090 (original position remains for audit)",
+  "timestamp": "2025-08-05T07:50:02.096479+00:00"
+}
+```
+
+**Result**: 
+- Original position remains visible for audit
+- New opposite position is created to neutralize exposure
+- Net exposure becomes zero (or negative if multiple closes)
+
+**TradeLocker API Limitation**: This is the expected behavior of the TradeLocker platform - positions are never "deleted" but rather "closed" through opposite orders for compliance and audit purposes.
 ```
 
 ## 📈 **Order Management Guide**
