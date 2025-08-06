@@ -1,0 +1,132 @@
+name: Deploy to AWS App Runner
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  AWS_REGION: eu-west-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.5.0"
+
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan \
+          -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+          -var="tradelocker_credentials=${{ secrets.TRADELOCKER_CREDENTIALS }}" \
+          -var="api_key=${{ secrets.API_KEY }}" \
+          -out=tfplan
+      env:
+        TF_VAR_tradelocker_credentials: ${{ secrets.TRADELOCKER_CREDENTIALS }}
+        TF_VAR_api_key: ${{ secrets.API_KEY }}
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      run: |
+        cd terraform
+        terraform apply -auto-approve tfplan
+      env:
+        TF_VAR_tradelocker_credentials: ${{ secrets.TRADELOCKER_CREDENTIALS }}
+        TF_VAR_api_key: ${{ secrets.API_KEY }}
+
+    - name: Get ECR repository URL
+      id: ecr
+      run: |
+        cd terraform
+        echo "repository_url=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: tradelocker-api
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+    - name: Update App Runner service
+      if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      run: |
+        cd terraform
+        SERVICE_ARN=$(terraform output -raw app_runner_service_arn)
+        aws apprunner start-deployment --service-arn $SERVICE_ARN
+
+    - name: Wait for deployment
+      if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      run: |
+        cd terraform
+        SERVICE_ARN=$(terraform output -raw app_runner_service_arn)
+        aws apprunner wait service-running --service-arn $SERVICE_ARN
+
+    - name: Test deployment
+      if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      run: |
+        cd terraform
+        SERVICE_URL=$(terraform output -raw app_runner_service_url)
+        echo "Testing service at: $SERVICE_URL"
+        
+        # Wait for service to be ready
+        for i in {1..30}; do
+          if curl -s "$SERVICE_URL/health" > /dev/null 2>&1; then
+            echo "Service is ready!"
+            break
+          fi
+          echo "Waiting... (attempt $i/30)"
+          sleep 10
+        done
+        
+        # Test health endpoint
+        curl -s "$SERVICE_URL/health" | jq .
+
+    - name: Output deployment info
+      if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      run: |
+        cd terraform
+        echo "=== DEPLOYMENT SUMMARY ==="
+        echo "App Runner Service URL: $(terraform output -raw app_runner_service_url)"
+        echo "ECR Repository URL: $(terraform output -raw ecr_repository_url)"
+        echo "DynamoDB Table: $(terraform output -raw dynamodb_table_name)"
+        echo "CloudWatch Log Group: $(terraform output -raw cloudwatch_log_group)" 
