@@ -2,9 +2,8 @@ version: 1.0
 runtime: python3
 build:
   commands:
-    build:
-      - echo "Installing dependencies..."
-      - pip install -r requirements.txt
+    - echo "Installing dependencies..."
+    - pip install -r requirements.txt
 run:
   runtime: python3
   command: uvicorn app.main:app --host 0.0.0.0 --port 8000
