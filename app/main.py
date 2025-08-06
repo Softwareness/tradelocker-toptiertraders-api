@@ -23,9 +23,22 @@ import uvicorn
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize AWS clients
-dynamodb = boto3.resource('dynamodb')
-secrets_manager = boto3.client('secretsmanager')
+# Initialize AWS clients conditionally
+dynamodb = None
+secrets_manager = None
+
+# Only initialize AWS clients if AWS credentials are available
+if os.environ.get('AWS_ACCESS_KEY_ID') or os.environ.get('AWS_PROFILE'):
+    try:
+        dynamodb = boto3.resource('dynamodb', region_name='eu-west-1')
+        secrets_manager = boto3.client('secretsmanager', region_name='eu-west-1')
+        logger.info("AWS clients initialized successfully")
+    except Exception as e:
+        logger.warning(f"Failed to initialize AWS clients: {e}")
+        dynamodb = None
+        secrets_manager = None
+else:
+    logger.info("AWS credentials not found, running without AWS services")
 
 # Import TradeLocker service directly
 from tradelocker import TLAPI
@@ -530,6 +543,10 @@ class TradeLockerService:
     
     def log_order(self, order_id: str, order_data: Dict[str, Any], status: str):
         """Log order to DynamoDB"""
+        if dynamodb is None:
+            logger.info(f"Order logging skipped - DynamoDB not available: {order_id}")
+            return
+            
         try:
             table_name = os.environ.get('ORDERS_TABLE_NAME', 'tradelocker-orders')
             table = dynamodb.Table(table_name)
